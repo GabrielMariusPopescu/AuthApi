@@ -16,7 +16,4 @@ public class RegisterDto
 
     [Display(Name = "Password")]
     public required string Password { get; set; }
-
-    [Display(Name = "Confirm Password")]
-    public required string ConfirmPassword { get; set; }
 }

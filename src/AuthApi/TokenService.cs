@@ -1,6 +1,4 @@
-﻿using System.Security.Cryptography;
-
-namespace AuthApi;
+﻿namespace AuthApi;
 
 public class TokenService(IConfiguration configuration)
 {

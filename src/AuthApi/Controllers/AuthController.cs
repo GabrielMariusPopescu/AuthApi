@@ -12,7 +12,14 @@ public class AuthController(
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterDto dto)
     {
-        var user = new User { FirstName = "Jon", LastName = "Doe",UserName = dto.Email, Email = dto.Email };
+        var user = new User
+        {
+            FirstName = dto.FirstName, 
+            LastName = dto.LastName,
+            UserName = dto.Email, 
+            Email = dto.Email,
+            PhoneNumber = dto.Phone
+        };
         var result = await userManager.CreateAsync(user, dto.Password);
         if (!result.Succeeded) return BadRequest(result.Errors);
 
@@ -24,33 +31,43 @@ public class AuthController(
     public async Task<IActionResult> Login(LoginDto dto)
     {
         var user = await userManager.FindByEmailAsync(dto.Email);
-        if (user == null) return Unauthorized();
+        if (user == null) 
+            return Unauthorized();
 
-        if (!await userManager.CheckPasswordAsync(user, dto.Password)) return Unauthorized();
+        if (!await userManager.CheckPasswordAsync(user, dto.Password)) 
+            return Unauthorized();
 
         var roles = await userManager.GetRolesAsync(user);
         var (accessToken, expiresAt) = tokenService.CreateAccessToken(user, roles);
 
         var refreshToken = tokenService.CreateRefreshToken();
+        var refreshTokenDays = config["Jwt:RefreshTokenDays"] ?? "30";
+        var days = int.Parse(refreshTokenDays);
         var refresh = new RefreshToken
         {
             Token = refreshToken,
             UserId = user.Id.ToGuid(),
             Created = DateTime.UtcNow,
-            Expires = DateTime.UtcNow.AddDays(int.Parse(config["Jwt:RefreshTokenDays"] ?? "30")),
+            Expires = DateTime.UtcNow.AddDays(days),
             IsRevoked = false
         };
         db.RefreshTokens.Add(refresh);
         await db.SaveChangesAsync();
 
-        return Ok(new TokenResponse(accessToken, refreshToken, expiresAt));
+        var value = new TokenResponse(accessToken, refreshToken, expiresAt);
+        return Ok(value);
     }
 
     [HttpPost("refresh")]
-    public async Task<IActionResult> Refresh(RefreshRequest req)
+    public async Task<IActionResult> Refresh(RefreshRequest request)
     {
-        var stored = await db.RefreshTokens.Include(r => r.UserId).FirstOrDefaultAsync(r => r.Token == req.RefreshToken);
-        if (stored == null || stored.IsRevoked || stored.Expires < DateTime.UtcNow) return Unauthorized();
+        var stored = await db.RefreshTokens
+            .Include(token => token.UserId)
+            .FirstOrDefaultAsync(token => token.Token == request.RefreshToken);
+        if (stored == null || 
+            stored.IsRevoked ||
+            stored.Expires < DateTime.UtcNow) 
+            return Unauthorized();
 
         var user = await userManager.FindByIdAsync(stored.UserId.ToString());
         if (user == null) 
@@ -61,14 +78,17 @@ public class AuthController(
         var roles = await userManager.GetRolesAsync(user);
         var (accessToken, expiresAt) = tokenService.CreateAccessToken(user, roles);
         var newRefresh = tokenService.CreateRefreshToken();
-        db.RefreshTokens.Add(new RefreshToken
+        var refreshTokenDays = config["Jwt:RefreshTokenDays"] ?? "30";
+        var day = int.Parse(refreshTokenDays);
+        var refreshToken = new RefreshToken
         {
             Token = newRefresh,
             UserId = user.Id.ToGuid(),
             Created = DateTime.UtcNow,
-            Expires = DateTime.UtcNow.AddDays(int.Parse(config["Jwt:RefreshTokenDays"] ?? "30")),
+            Expires = DateTime.UtcNow.AddDays(day),
             IsRevoked = false
-        });
+        };
+        db.RefreshTokens.Add(refreshToken);
 
         await db.SaveChangesAsync();
         return Ok(new TokenResponse(accessToken, newRefresh, expiresAt));
